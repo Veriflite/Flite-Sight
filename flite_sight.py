@@ -1,8 +1,11 @@
 #!/usr/bin/env python
 
-import asyncio
 import argparse
+import asyncio
 import json
+import srt
+import subprocess
+import time
 import websockets
 from datetime import datetime
 
@@ -22,57 +25,87 @@ class Veriflite_Receiver():
 
         print(f"{j['Address']}, {j['Type']}, {j['Data']}")
         if 'IMPACT' in j['Type']:
-            self.onImpact(j['Address'])
+            self.onImpact(j['Address'], j['Data'])
 
         if 'DEPART' in j['Type']:
-            self.onDepart(j['Address'])
+            self.onDepart(j['Address'], j['Data'])
 
         if 'IDLE' in j['Type']:
-            self.onIdle(j['Address'])
+            self.onIdle(j['Address'], j['Data'])
 
 
 class Camera():
     def __init__(self, device, resolution, fps, playbackDelay):
         self.recording = False
-        self.count = 0
         self.mpvLock = asyncio.Lock()
         self.currentVid = None
-        self.lastVid = None
         self.device = device
         self.fps = fps
         self.resolution = resolution
         self.playbackDelay = playbackDelay
 
-    async def record(self):
+    async def record(self, filename):
         if self.recording:
             return
         self.recording = True
-        self.count += 1
-        time = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.currentVid = f"{time}_{self.count:03}.mp4"
+        self.currentVid = filename
+        self.currentVidStartTime = datetime.now()
         print(f"Recording video: {self.currentVid}")
         self.ffmpeg = await asyncio.create_subprocess_shell(
             f"ffmpeg -hide_banner -loglevel error -y -f v4l2 -framerate {self.fps} -video_size {self.resolution} -input_format mjpeg -i {self.device} -c:v h264 -preset faster -qp 0 -strict -2 {self.currentVid}")
         await self.ffmpeg.wait()
 
+    def getCurrentTimestamp(self):
+        assert(self.recording)
+        #return datetime.timedelta(seconds=float(datetime.now()  - self.currentVidStartTime))
+        return datetime.now() - self.currentVidStartTime
+
     def stop(self):
         if not self.recording:
-            return
+            return 0
         print("Stop recording")
+
         self.recording = False
         try:
             self.ffmpeg.terminate()
         except ProcessLookupError as e:
             print(f"ProcessLookupError: {e}")
-        self.lastVid = self.currentVid
 
-    async def play(self):
-        print(f"Playing video: {self.lastVid}")
+        time.sleep(1)
+        ffprobe = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
+                                 "format=duration", "-of",
+                                 "default=noprint_wrappers=1:nokey=1", self.currentVid],
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT)
+        return float(ffprobe.stdout)
+
+    async def play(self, videoFile, srtFile):
+        print(f"Playing video: {videoFile}")
         await asyncio.sleep(self.playbackDelay)
         async with self.mpvLock:
             mpv = await asyncio.create_subprocess_shell(
-                f"mpv --fullscreen --quiet {self.lastVid}")
+                f"mpv --fullscreen --quiet {videoFile}")
             await mpv.wait()
+
+
+class Subtitler():
+    def __init__(self, filename):
+        self.filename = filename
+        self.subtitles = []
+
+    def append(self, departTime, impactTime, tof):
+        print(f"Subtitler.append({departTime}, {impactTime}, {tof}")
+        self.subtitles.append(srt.Subtitle(index=len(self.subtitles) + 1,
+                                           start=departTime,
+                                           end=impactTime,
+                                           # content="ToF: {:.3f} ({:.3f})  {}".format(tofs[-1], tofs[-1] - tofs[-2], total_tof)))
+                                           content=f"{tof:.3f}"))
+
+    def save(self):
+        print(f"Saving subtitles to {self.filename}")
+        print(list(self.subtitles))
+        with open(self.filename, "w") as f:
+            f.write(srt.compose(self.subtitles))
 
 
 class Flite_Sight():
@@ -81,6 +114,14 @@ class Flite_Sight():
         self.cam = Camera(device, resolution, fps, playbackDelay)
         self.vf = Veriflite_Receiver(self.onImpact, self.onDepart, self.onIdle)
         self.recordingSensor = None
+        self.tof = 0
+        self.fileprefix = None
+        self.departTime = None
+
+        # Only tracking the recording sensor!!
+        self.lastImpactTime = None
+        self.lastDepartTime = None
+        self.lastIdleTime = None
 
     async def start(self):
         print(f"Opening connection to Veriflite portal: {self.uri}")
@@ -97,19 +138,49 @@ class Flite_Sight():
                     self.vf.parse(pkt)
             print("Reconnecting...")
 
-    def onImpact(self, address):
+    def onImpact(self, address, timestamp):
         if not self.recordingSensor:
+            #self.lastImpactTime = timestamp
+            self.lastImpactTime = round(time.time() * 1000)
+
+            # Start video recording
             self.recordingSensor = address
-            asyncio.get_running_loop().create_task(self.cam.record())
+            self.fileprefix = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            asyncio.get_running_loop().create_task(self.cam.record(f"{self.fileprefix}.mp4"))
 
-    def onDepart(self, address):
-        pass
+            # Start new subtitle capture
+            self.subs = Subtitler(f"{self.fileprefix}.srt")
 
-    def onIdle(self, address):
+        elif self.recordingSensor and address in self.recordingSensor:
+            #self.lastImpactTime = timestamp
+            self.lastImpactTime = round(time.time() * 1000)
+            impactTime = self.cam.getCurrentTimestamp()
+            print(f"impactTime: {impactTime}")
+            self.tof += 1
+            self.subs.append(self.departTime, impactTime, (self.lastImpactTime - self.lastDepartTime) / 1000)
+
+    def onDepart(self, address, timestamp):
         if self.recordingSensor and address in self.recordingSensor:
+            #self.lastDepartTime = timestamp
+            self.lastDepartTime = round(time.time() * 1000)
+            if self.recordingSensor:
+                self.departTime = self.cam.getCurrentTimestamp()
+                print(f"departTime: {self.departTime}")
+
+    def onIdle(self, address, timestamp):
+        if self.recordingSensor and address in self.recordingSensor:
+            self.lastIdleTime = round(time.time() * 1000)
+            self.lastDepartTime = None
+            self.lastImpactTime = None
             self.recordingSensor = None
-            self.cam.stop()
-            asyncio.get_running_loop().create_task(self.cam.play())
+            self.departTime = None
+            stopTime = self.cam.getCurrentTimestamp()
+            stopTimestamp = round(time.time() * 1000)
+
+            videoLength = self.cam.stop()
+            print(f"Video lengths {stopTime}, {stopTimestamp}, {videoLength}")
+            self.subs.save()
+            asyncio.get_running_loop().create_task(self.cam.play(f"{self.fileprefix}.mp4", f"{self.fileprefix}.srt"))
 
 
 if __name__ == "__main__":
