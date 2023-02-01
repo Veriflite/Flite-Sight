@@ -130,3 +130,5 @@ dmypy.json
 
 # Video files
 *.mp4
+*.srt
+*.osrt
