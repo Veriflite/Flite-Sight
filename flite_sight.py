@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import json
+import os
 import srt
 import subprocess
 import time
@@ -63,7 +64,8 @@ class Camera():
         await self.ffmpeg.wait()
 
     def getCurrentTimestamp(self):
-        assert(self.recording)
+        if not self.recording:
+            return 0
         dt = datetime.now() - self.currentVidStartTime
         return dt.total_seconds()
 
@@ -78,6 +80,7 @@ class Camera():
             self.ffmpeg.terminate()
         except ProcessLookupError as e:
             print(f"ProcessLookupError: {e}")
+            return 0
 
         duration = 0
         for i in range(30):
@@ -113,8 +116,7 @@ class Subtitler():
                                            content=f"{tof:.3f}"))
 
     def save(self):
-        print(f"Saving subtitles to {self.filename}")
-        print(list(self.subtitles))
+        print(f"Saving ToF subtitles to {self.filename}")
         with open(self.filename, "w") as f:
             f.write(srt.compose(self.subtitles))
 
@@ -128,7 +130,7 @@ class Flite_Sight():
         self.recordingSensor = None
         self.tof = 0
         self.fileprefix = None
-        self.departTime = None
+        self.departTime = 0
 
         # Only tracking the recording sensor!!
         self.lastImpactTime = 0
@@ -161,7 +163,7 @@ class Flite_Sight():
 
             # Start new subtitle capture
             if self.writeSubs:
-                self.subs = Subtitler(f"{self.fileprefix}_orig.srt")
+                self.subs = Subtitler(f"{self.fileprefix}.osrt")
 
         elif self.recordingSensor and address in self.recordingSensor:
             self.lastImpactTime = timestamp
@@ -191,8 +193,10 @@ class Flite_Sight():
 
             if self.writeSubs:
                 self.subs.save()
-                suboffset_cmd = f"ffmpeg -itsoffset {syncError} -i {self.fileprefix}_orig.srt {self.fileprefix}.srt"
-                subprocess.run(suboffset_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                if syncError:
+                    suboffset_cmd = f"ffmpeg -itsoffset {syncError} -i {self.fileprefix}.osrt {self.fileprefix}.srt"
+                    subprocess.run(suboffset_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                    os.remove(f"{self.fileprefix}.osrt")
 
             asyncio.get_running_loop().create_task(self.cam.play(f"{self.fileprefix}.mp4"))
 
