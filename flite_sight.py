@@ -3,7 +3,6 @@
 import argparse
 import asyncio
 import json
-import os
 import srt
 import subprocess
 import time
@@ -115,6 +114,12 @@ class Subtitler():
                                            # content="ToF: {:.3f} ({:.3f})  {}".format(tofs[-1], tofs[-1] - tofs[-2], total_tof)))
                                            content=f"{tof:.3f}"))
 
+    def timeshift(self, delta):
+        print(f"Shifting subtitles by {delta} seconds")
+        for s in self.subtitles:
+            s.start += timedelta(seconds=delta)
+            s.end += timedelta(seconds=delta)
+
     def save(self):
         print(f"Saving ToF subtitles to {self.filename}")
         with open(self.filename, "w") as f:
@@ -122,9 +127,9 @@ class Subtitler():
 
 
 class Flite_Sight():
-    def __init__(self, uri, device, resolution, fps, playbackDelay, writeSubs):
+    def __init__(self, uri, device, resolution, fps, playbackDelay, subsEnabled):
         self.uri = uri
-        self.writeSubs = writeSubs
+        self.subsEnabled = subsEnabled
         self.cam = Camera(device, resolution, fps, playbackDelay)
         self.vf = Veriflite_Receiver(self.onImpact, self.onDepart, self.onIdle)
         self.recordingSensor = None
@@ -162,15 +167,15 @@ class Flite_Sight():
             asyncio.get_running_loop().create_task(self.cam.record(f"{self.fileprefix}.mp4"))
 
             # Start new subtitle capture
-            if self.writeSubs:
-                self.subs = Subtitler(f"{self.fileprefix}.osrt")
+            if self.subsEnabled:
+                self.subs = Subtitler(f"{self.fileprefix}.srt")
 
         elif self.recordingSensor and address in self.recordingSensor:
             self.lastImpactTime = timestamp
             impactTime = self.cam.getCurrentTimestamp()
             print(f"impactTime: {impactTime}")
             self.tof += 1
-            if self.writeSubs:
+            if self.subsEnabled:
                 self.subs.append(self.departTime, impactTime, (self.lastImpactTime - self.lastDepartTime) / 1000)
 
     def onDepart(self, address, timestamp):
@@ -191,12 +196,9 @@ class Flite_Sight():
             syncError = self.cam.stop()
             print(f"Sync Error: {syncError}")
 
-            if self.writeSubs:
+            if self.subsEnabled:
+                self.subs.timeshift(syncError)
                 self.subs.save()
-                if syncError:
-                    suboffset_cmd = f"ffmpeg -itsoffset {syncError} -i {self.fileprefix}.osrt {self.fileprefix}.srt"
-                    subprocess.run(suboffset_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-                    os.remove(f"{self.fileprefix}.osrt")
 
             asyncio.get_running_loop().create_task(self.cam.play(f"{self.fileprefix}.mp4"))
 
