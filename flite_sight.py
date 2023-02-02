@@ -57,7 +57,7 @@ class Camera():
         self.currentVid = filename
         self.currentVidStartTime = datetime.now()
         print(f"Recording video: {self.currentVid}")
-        ffmpegCmd = f"ffmpeg -hide_banner -loglevel fatal -y -f v4l2 -framerate {self.fps} -video_size {self.resolution} -input_format mjpeg -i {self.device} -c:v h264 -preset faster -qp 0 -strict -2 {self.currentVid}"
+        ffmpegCmd = f"ffmpeg -loglevel warning -hide_banner -y -f v4l2 -framerate {self.fps} -video_size {self.resolution} -input_format mjpeg -i {self.device} -c:v h264 -preset faster -qp 0 -strict -2 {self.currentVid}"
         print(ffmpegCmd)
         self.ffmpeg = await asyncio.create_subprocess_shell(ffmpegCmd)
         await self.ffmpeg.wait()
@@ -205,7 +205,7 @@ class Flite_Sight():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-i", "--ip", type=str, help="The IP address of the Veriflite portal")
+    parser.add_argument("-i", "--ip", required=True, type=str, help="The IP address of the Veriflite portal")
     parser.add_argument("-v", "--device", type=str, default="/dev/video0", help="The video device to use (defaults to /dev/video0)")
     parser.add_argument("-d", "--delay", type=int, default=5, help="Delay after recording before video (deafults to 5 seconds)")
     parser.add_argument("-f", "--fps", type=int, default=30, help="Frame rate to record from the webcam")
