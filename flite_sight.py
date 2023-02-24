@@ -207,9 +207,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--ip", required=True, type=str, help="The IP address of the Veriflite portal")
     parser.add_argument("-v", "--device", type=str, default="/dev/video0", help="The video device to use (defaults to /dev/video0)")
-    parser.add_argument("-d", "--delay", type=int, default=5, help="Delay after recording before video (deafults to 5 seconds)")
+    parser.add_argument("-d", "--delay", type=int, default=0, help="Delay after recording before video")
     parser.add_argument("-f", "--fps", type=int, default=30, help="Frame rate to record from the webcam")
-    parser.add_argument("-r", "--res", type=str, default="1920x1080", help="Video resolution to record from the webcam")
+    parser.add_argument("-r", "--res", type=str, default="1280x720", help="Video resolution to record from the webcam")
     parser.add_argument("-s", "--subs", action='store_true', help="Create .subs file")
     args = parser.parse_args()
 
