@@ -57,7 +57,7 @@ class Camera():
         self.currentVid = filename
         self.currentVidStartTime = datetime.now()
         print(f"Recording video: {self.currentVid}")
-        ffmpegCmd = f"ffmpeg -loglevel warning -hide_banner -y -f v4l2 -framerate {self.fps} -video_size {self.resolution} -i veriflite.png -filter_complex \"overlay=5:H-h-5:format=auto,format=yuv420p\" -input_format mjpeg -i {self.device} -c:v h264 -preset faster -qp 0 -strict -2 {self.currentVid}"
+        ffmpegCmd = f"ffmpeg -loglevel error -hide_banner -y -f v4l2 -framerate {self.fps} -video_size {self.resolution} -input_format mjpeg -i {self.device} -i veriflite.png -filter_complex \"overlay=W-w-5:H-h:format=auto,format=yuv420p\"  -c:v h264 -preset faster -qp 0 -strict -2 {self.currentVid}"
         print(ffmpegCmd)
         self.ffmpeg = await asyncio.create_subprocess_shell(ffmpegCmd)
         await self.ffmpeg.wait()
