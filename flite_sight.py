@@ -3,7 +3,6 @@
 import argparse
 import asyncio
 import json
-import srt
 import subprocess
 import time
 import websockets
@@ -128,6 +127,15 @@ class Subtitler():
 
 class Flite_Sight():
     def __init__(self, uri, device, resolution, fps, playbackDelay, subsEnabled):
+        if subsEnabled:
+            try:
+                global srt
+                import srt
+            except ModuleNotFoundError as e:
+                print("The 'srt' module is required for this script to run.")
+                print("Please install it using `pip install srt`.")
+                import sys
+                sys.exit(1)
         self.uri = uri
         self.subsEnabled = subsEnabled
         self.cam = Camera(device, resolution, fps, playbackDelay)
