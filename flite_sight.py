@@ -68,6 +68,8 @@ class Camera():
         print(ffmpegCmd)
         self.ffmpeg = await asyncio.create_subprocess_shell(ffmpegCmd)
         await self.ffmpeg.wait()
+        print(f"Recording stopped")
+        self.recording = False
 
     def getCurrentTimestamp(self):
         if not self.recording:
@@ -82,7 +84,6 @@ class Camera():
         print("Stop recording")
 
         stopTime = self.getCurrentTimestamp()
-        self.recording = False
         try:
             self.ffmpeg.terminate()
         except ProcessLookupError as e:
@@ -179,10 +180,13 @@ class Flite_Sight():
             self.lastImpactTime = timestamp
 
             # Start video recording
-            self.recordingSensor = address
             self.fileprefix = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            asyncio.get_running_loop().create_task(self.cam.record(f"{self.fileprefix}.mp4"))
-
+            cam_task = asyncio.get_running_loop().create_task(self.cam.record(f"{self.fileprefix}.mp4"))
+            asyncio.sleep(1)
+            if cam_task.done():
+                print(f"Assuming the recording failed to start")
+                return
+            self.recordingSensor = address
             # Start new subtitle capture
             if self.subsEnabled:
                 self.subs = Subtitler(f"{self.fileprefix}.srt")
@@ -209,6 +213,7 @@ class Flite_Sight():
             self.lastImpactTime = 0
             self.recordingSensor = None
             self.departTime = 0
+            print(f"idleTime: {timestamp}")
 
             syncError = self.cam.stop()
             print(f"Sync Error: {syncError}")
