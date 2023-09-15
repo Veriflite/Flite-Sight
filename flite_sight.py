@@ -51,7 +51,8 @@ class Camera():
 
     async def record(self, filename):
         if self.recording:
-            return
+            print(f"ERROR: Can not start a new recording. Already recording {self.currentVid}")
+            sys.exit(1)
         self.recording = True
         self.currentVid = filename
         self.currentVidStartTime = datetime.now()
@@ -76,7 +77,8 @@ class Camera():
 
     def stop(self):
         if not self.recording:
-            return 0
+            print(f"ERROR: Can not stop recording. None in progress")
+            sys.exit(1)
         print("Stop recording")
 
         stopTime = self.getCurrentTimestamp()
